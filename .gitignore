@@ -1,0 +1,76 @@
+# Dependencies
+/node_modules
+/.pnp
+.pnp.js
+.yarn/install-state.gz
+
+# Next.js build output
+/.next/
+/out/
+/build
+/dist
+
+# Environment variables
+.env
+.env*.local
+.env.local
+.env.development
+.env.test
+.env.production
+!.env.example
+
+# AI Agent & Assistant Files
+AGENTS.md
+agents.md
+GEMINI.md
+gemini.md
+CLAUDE.md
+claude.md
+CHATGPT.md
+chatgpt.md
+DESIGN.md
+design.md
+system_requirements.md
+skills-lock.json
+.agents/
+.gemini/
+.cursor/
+.cursorrules
+.windsurf/
+.windsurfrules
+.cline/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+*.log
+
+# Diagnostic and coverage
+coverage/
+.nyc_output/
+
+# Turbo
+.turbo
+
+# Operating System Files
+.DS_Store
+*.pem
+Thumbs.db
+
+# TypeScript / Editor cache
+*.tsbuildinfo
+tsconfig.tsbuildinfo
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Temporary & Inspiration files
+UI_Inspiration/
+screenshots/
+scratch/
