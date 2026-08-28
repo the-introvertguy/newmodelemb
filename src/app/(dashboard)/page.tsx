@@ -9,77 +9,77 @@ export default async function DashboardPage() {
   const now = new Date();
 
   try {
-    // 1. Fetch core KPI counters in batch 1
-    const activeOrdersCount = await prisma.order.count({
-      where: {
-        isArchived: false,
-        deletedAt: null,
-        status: { notIn: [OrderStatus.DELIVERED, OrderStatus.CANCELLED] },
-      },
-    });
+    const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
 
-    const totalReceivableAgg = await prisma.buyerLedgerEntry.aggregate({
-      _sum: { debitAmount: true },
-    });
-
-    const totalPaymentsAgg = await prisma.buyerLedgerEntry.aggregate({
-      _sum: { creditAmount: true },
-    });
-
-    const totalPiecesAgg = await prisma.orderItem.aggregate({
-      _sum: { quantity: true },
-    });
-
-    // 2. Fetch statuses and recent orders in batch 2
-    const ordersByStatus = await prisma.order.groupBy({
-      by: ["status"],
-      where: { deletedAt: null, isArchived: false },
-      _count: { id: true },
-    });
-
-    const recentOrders = await prisma.order.findMany({
-      where: { deletedAt: null },
-      orderBy: { orderDate: "desc" },
-      take: 6,
-      include: {
-        buyer: true,
-        items: true,
-      },
-    });
-
-    const allUpcomingOrders = await prisma.order.findMany({
-      where: {
-        deletedAt: null,
-        expectedDeliveryDate: { not: null },
-      },
-      include: { buyer: true },
-    });
-
-    // 3. Fetch monthly chart records in batch 3
-    const allOrdersLast6Months = await prisma.order.findMany({
-      where: {
-        deletedAt: null,
-        orderDate: {
-          gte: new Date(now.getFullYear(), now.getMonth() - 5, 1),
+    // Fetch all KPI counters, recent orders, and trends concurrently
+    const [
+      activeOrdersCount,
+      totalReceivableAgg,
+      totalPaymentsAgg,
+      totalPiecesAgg,
+      ordersByStatus,
+      recentOrders,
+      allUpcomingOrders,
+      allOrdersLast6Months,
+      allPaymentsLast6Months,
+    ] = await Promise.all([
+      prisma.order.count({
+        where: {
+          isArchived: false,
+          deletedAt: null,
+          status: { notIn: [OrderStatus.DELIVERED, OrderStatus.CANCELLED] },
         },
-      },
-      select: {
-        orderDate: true,
-        totalAmount: true,
-      },
-    });
-
-    const allPaymentsLast6Months = await prisma.payment.findMany({
-      where: {
-        paymentDate: {
-          gte: new Date(now.getFullYear(), now.getMonth() - 5, 1),
+      }),
+      prisma.buyerLedgerEntry.aggregate({
+        _sum: { debitAmount: true },
+      }),
+      prisma.buyerLedgerEntry.aggregate({
+        _sum: { creditAmount: true },
+      }),
+      prisma.orderItem.aggregate({
+        _sum: { quantity: true },
+      }),
+      prisma.order.groupBy({
+        by: ["status"],
+        where: { deletedAt: null, isArchived: false },
+        _count: { id: true },
+      }),
+      prisma.order.findMany({
+        where: { deletedAt: null },
+        orderBy: { orderDate: "desc" },
+        take: 6,
+        include: {
+          buyer: true,
+          items: true,
         },
-      },
-      select: {
-        paymentDate: true,
-        amount: true,
-      },
-    });
+      }),
+      prisma.order.findMany({
+        where: {
+          deletedAt: null,
+          expectedDeliveryDate: { not: null },
+        },
+        include: { buyer: true },
+      }),
+      prisma.order.findMany({
+        where: {
+          deletedAt: null,
+          orderDate: { gte: sixMonthsAgo },
+        },
+        select: {
+          orderDate: true,
+          totalAmount: true,
+        },
+      }),
+      prisma.payment.findMany({
+        where: {
+          paymentDate: { gte: sixMonthsAgo },
+        },
+        select: {
+          paymentDate: true,
+          amount: true,
+        },
+      }),
+    ]);
 
     const totalReceivable = Number(totalReceivableAgg._sum.debitAmount || 0);
     const totalPayments = Number(totalPaymentsAgg._sum.creditAmount || 0);
