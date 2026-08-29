@@ -12,33 +12,29 @@ export default async function DashboardPage() {
     const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
 
     // Fetch all KPI counters, recent orders, and trends concurrently
-    const [
-      activeOrdersCount,
-      totalReceivableAgg,
-      totalPaymentsAgg,
-      totalPiecesAgg,
-      ordersByStatus,
-      recentOrders,
-      allUpcomingOrders,
-      allOrdersLast6Months,
-      allPaymentsLast6Months,
-    ] = await Promise.all([
-      prisma.order.count({
-        where: {
-          isArchived: false,
-          deletedAt: null,
-          status: { notIn: [OrderStatus.DELIVERED, OrderStatus.CANCELLED] },
-        },
-      }),
-      prisma.buyerLedgerEntry.aggregate({
-        _sum: { debitAmount: true },
-      }),
-      prisma.buyerLedgerEntry.aggregate({
-        _sum: { creditAmount: true },
-      }),
-      prisma.orderItem.aggregate({
-        _sum: { quantity: true },
-      }),
+    // Batch 1: Key Aggregates & Counts (Sequential batch to conserve DB connections)
+    const [activeOrdersCount, totalReceivableAgg, totalPaymentsAgg, totalPiecesAgg] =
+      await Promise.all([
+        prisma.order.count({
+          where: {
+            isArchived: false,
+            deletedAt: null,
+            status: { notIn: [OrderStatus.DELIVERED, OrderStatus.CANCELLED] },
+          },
+        }),
+        prisma.buyerLedgerEntry.aggregate({
+          _sum: { debitAmount: true },
+        }),
+        prisma.buyerLedgerEntry.aggregate({
+          _sum: { creditAmount: true },
+        }),
+        prisma.orderItem.aggregate({
+          _sum: { quantity: true },
+        }),
+      ]);
+
+    // Batch 2: Order status breakdown & recent lists
+    const [ordersByStatus, recentOrders, allUpcomingOrders] = await Promise.all([
       prisma.order.groupBy({
         by: ["status"],
         where: { deletedAt: null, isArchived: false },
@@ -60,6 +56,10 @@ export default async function DashboardPage() {
         },
         include: { buyer: true },
       }),
+    ]);
+
+    // Batch 3: 6-Month historical trend data
+    const [allOrdersLast6Months, allPaymentsLast6Months] = await Promise.all([
       prisma.order.findMany({
         where: {
           deletedAt: null,
@@ -86,7 +86,20 @@ export default async function DashboardPage() {
     const totalPiecesProduced = Number(totalPiecesAgg._sum.quantity || 0);
 
     // Compute 6-month trend data
-    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const monthNames = [
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec",
+    ];
     const monthlyTrendData: Array<{ month: string; orders: number; payments: number }> = [];
 
     for (let i = 5; i >= 0; i--) {
