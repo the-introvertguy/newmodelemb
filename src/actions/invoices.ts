@@ -5,8 +5,8 @@ import { getCurrentUser } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
 import { logAuditEvent } from "@/lib/audit";
 import { CreateInvoiceSchema, UpdateInvoiceSchema } from "@/schemas";
-import { numberToWordsTaka } from "@/lib/utils";
 import { revalidatePath } from "next/cache";
+import { calculateInvoiceTotals } from "@/services/invoicing.service";
 
 /**
  * Generates sequential Bill Number in format YYYY-00001 (e.g. 2026-00001)
@@ -219,18 +219,13 @@ export async function createInvoice(input: unknown) {
     throw new Error("All orders included in a bill MUST belong to the same buyer");
   }
 
-  // 2. Compute subtotal from all items in selected orders
-  let subtotal = 0;
-  for (const order of orders) {
-    for (const item of order.items) {
-      subtotal += Number(item.totalPrice);
-    }
-  }
-
-  const discount = Number(validated.discount || 0);
-  const advanceReceived = Number(validated.advanceReceived || 0);
-  const grandTotal = Math.max(0, subtotal - discount - advanceReceived);
-  const inWords = numberToWordsTaka(grandTotal);
+  // 2. Compute totals using Invoicing Domain Service
+  const allOrderItems = orders.flatMap((o) => o.items);
+  const { subtotal, discount, advanceReceived, grandTotal, inWords } = calculateInvoiceTotals({
+    items: allOrderItems,
+    discount: validated.discount,
+    advanceReceived: validated.advanceReceived,
+  });
 
   const invoiceNumber = await generateNextInvoiceNumber(validated.invoiceDate);
 
@@ -302,22 +297,27 @@ export async function updateInvoice(input: unknown) {
     throw new Error("Invoice not found");
   }
 
-  const discount = validated.discount !== undefined ? Number(validated.discount) : Number(current.discount);
-  const advanceReceived =
-    validated.advanceReceived !== undefined
-      ? Number(validated.advanceReceived)
-      : Number(current.advanceReceived);
-  const subtotal = Number(current.subtotal);
-  const grandTotal = Math.max(0, subtotal - discount - advanceReceived);
-  const inWords = numberToWordsTaka(grandTotal);
+  const targetDiscount = validated.discount !== undefined ? validated.discount : current.discount;
+  const targetAdvance =
+    validated.advanceReceived !== undefined ? validated.advanceReceived : current.advanceReceived;
+
+  const { discount, advanceReceived, grandTotal, inWords } = calculateInvoiceTotals({
+    items: [
+      { quantity: 1, unitPrice: Number(current.subtotal), totalPrice: Number(current.subtotal) },
+    ],
+    discount: targetDiscount,
+    advanceReceived: targetAdvance,
+  });
 
   const updated = await prisma.invoice.update({
     where: { id: validated.id },
     data: {
-      referenceNote: validated.referenceNote !== undefined ? validated.referenceNote : current.referenceNote,
+      referenceNote:
+        validated.referenceNote !== undefined ? validated.referenceNote : current.referenceNote,
       invoiceDate: validated.invoiceDate || current.invoiceDate,
       subject: validated.subject || current.subject,
-      salutationText: validated.salutationText !== undefined ? validated.salutationText : current.salutationText,
+      salutationText:
+        validated.salutationText !== undefined ? validated.salutationText : current.salutationText,
       discount,
       advanceReceived,
       grandTotal,

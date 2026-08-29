@@ -19,7 +19,7 @@
 .env.production
 !.env.example
 
-# AI Agent & Assistant Files
+# AI Agent & Assistant Files & Skills
 /scripts
 AGENTS.md
 agents.md
@@ -34,12 +34,20 @@ design.md
 system_requirements.md
 skills-lock.json
 .agents/
+.agent/
+agent/
+.claude/
 .gemini/
 .cursor/
 .cursorrules
 .windsurf/
 .windsurfrules
 .cline/
+.roo/
+.codex/
+
+# Husky internal
+.husky/_
 
 # Logs
 npm-debug.log*

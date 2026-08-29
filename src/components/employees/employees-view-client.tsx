@@ -3,16 +3,7 @@
 import React, { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import {
-  Plus,
-  Edit2,
-  Trash2,
-  FileText,
-  CreditCard,
-  Coins,
-  Gift,
-  X,
-} from "lucide-react";
+import { Plus, Edit2, Trash2, FileText, CreditCard, Coins, Gift, X } from "lucide-react";
 import {
   createEmployee,
   updateEmployee,
@@ -31,6 +22,9 @@ export function EmployeesViewClient({ employees }: { employees: any[] }) {
   const [showNewEmpModal, setShowNewEmpModal] = useState(false);
   const [editingEmp, setEditingEmp] = useState<any | null>(null);
   const [auditLogEmployee, setAuditLogEmployee] = useState<any | null>(null);
+  const [auditLogTab, setAuditLogTab] = useState<"ALL" | "SETTLEMENTS" | "ADVANCES" | "BONUSES">(
+    "ALL"
+  );
   const [actionModalEmp, setActionModalEmp] = useState<any | null>(null);
 
   // Unified Action Modal Sub-type
@@ -55,7 +49,10 @@ export function EmployeesViewClient({ employees }: { employees: any[] }) {
   // Aggregate stats
   const totalMonthlySalary = employees.reduce((s, e) => s + Number(e.monthlySalary), 0);
   const totalAdvancesThisMonth = employees.reduce((s, e) => {
-    const unSettled = e.advances?.reduce((as: number, a: any) => as + Number(a.amount), 0) || 0;
+    const unSettled =
+      e.advances
+        ?.filter((a: any) => !a.isSettled)
+        .reduce((as: number, a: any) => as + Number(a.amount), 0) || 0;
     return s + unSettled;
   }, 0);
 
@@ -63,10 +60,7 @@ export function EmployeesViewClient({ employees }: { employees: any[] }) {
   const [empPage, setEmpPage] = useState(1);
   const empPageSize = 10;
   const totalEmpPages = Math.max(1, Math.ceil(employees.length / empPageSize));
-  const paginatedEmployees = employees.slice(
-    (empPage - 1) * empPageSize,
-    empPage * empPageSize
-  );
+  const paginatedEmployees = employees.slice((empPage - 1) * empPageSize, empPage * empPageSize);
 
   const handleOpenEditEmp = (emp: any) => {
     setEditingEmp(emp);
@@ -75,9 +69,7 @@ export function EmployeesViewClient({ employees }: { employees: any[] }) {
     setPhone(emp.phone);
     setAddress(emp.address);
     setMonthlySalary(String(emp.monthlySalary));
-    setJoiningDate(
-      emp.joiningDate ? new Date(emp.joiningDate).toISOString().split("T")[0] : ""
-    );
+    setJoiningDate(emp.joiningDate ? new Date(emp.joiningDate).toISOString().split("T")[0] : "");
   };
 
   const handleCreateEmployee = async (e: React.FormEvent) => {
@@ -261,9 +253,11 @@ export function EmployeesViewClient({ employees }: { employees: any[] }) {
       {/* Employee Cards Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {paginatedEmployees.map((emp) => {
-          const totalEmpAdvances =
-            emp.advances?.reduce((s: number, a: any) => s + Number(a.amount), 0) || 0;
-          const remainingSalary = Math.max(0, Number(emp.monthlySalary) - totalEmpAdvances);
+          const pendingEmpAdvances =
+            emp.advances
+              ?.filter((a: any) => !a.isSettled)
+              .reduce((s: number, a: any) => s + Number(a.amount), 0) || 0;
+          const remainingSalary = Math.max(0, Number(emp.monthlySalary) - pendingEmpAdvances);
 
           return (
             <div
@@ -341,19 +335,21 @@ export function EmployeesViewClient({ employees }: { employees: any[] }) {
 
                 <div>
                   <span className="text-[9px] uppercase font-semibold text-slate-400 block">
-                    Advances
+                    Pending Adv.
                   </span>
-                  <span className="font-bold text-amber-700">
-                    ৳ {totalEmpAdvances.toLocaleString("en-IN")}
+                  <span
+                    className={`font-bold ${pendingEmpAdvances > 0 ? "text-amber-700" : "text-slate-600"}`}
+                  >
+                    ৳ {pendingEmpAdvances.toLocaleString("en-IN")}
                   </span>
                 </div>
 
                 <div>
                   <span className="text-[9px] uppercase font-semibold text-slate-400 block">
-                    Settlements
+                    Settled
                   </span>
                   <span className="font-bold text-slate-900">
-                    {emp.settlements?.length || 0}
+                    {emp.settlements?.length || 0} mos
                   </span>
                 </div>
 
@@ -376,8 +372,7 @@ export function EmployeesViewClient({ employees }: { employees: any[] }) {
         <div className="flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500 pt-2">
           <span>
             Showing {(empPage - 1) * empPageSize + 1} to{" "}
-            {Math.min(empPage * empPageSize, employees.length)} of{" "}
-            {employees.length} employees
+            {Math.min(empPage * empPageSize, employees.length)} of {employees.length} employees
           </span>
           <div className="flex items-center gap-1.5">
             <button
@@ -548,15 +543,37 @@ export function EmployeesViewClient({ employees }: { employees: any[] }) {
                 <>
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Salary Month (YYYY-MM)
+                      Salary Month (YYYY-MM) *
                     </label>
                     <input
                       type="month"
+                      required
                       value={settleMonth}
                       onChange={(e) => setSettleMonth(e.target.value)}
-                      className="w-full px-3.5 py-2 bg-[#FAF8F5] border border-[#ede8e1] rounded-2xl text-sm"
+                      className="w-full px-3.5 py-2 bg-[#FAF8F5] border border-[#ede8e1] rounded-2xl text-sm font-mono font-medium"
                     />
                   </div>
+
+                  {(() => {
+                    const existingSettlement = actionModalEmp.settlements?.find(
+                      (s: any) => s.monthYear === settleMonth
+                    );
+                    if (existingSettlement) {
+                      return (
+                        <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl text-xs text-amber-800 space-y-1">
+                          <p className="font-bold flex items-center gap-1.5">
+                            ⚠️ Already Settled for {settleMonth}
+                          </p>
+                          <p className="text-[11px] text-amber-700">
+                            Paid ৳{" "}
+                            {Number(existingSettlement.netPaidAmount).toLocaleString("en-IN")} on{" "}
+                            {formatDate(existingSettlement.paymentDate, "yyyy-MM-dd")}.
+                          </p>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
 
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
@@ -565,6 +582,7 @@ export function EmployeesViewClient({ employees }: { employees: any[] }) {
                     <input
                       type="number"
                       min="0"
+                      step="0.01"
                       value={otherDeductions}
                       onChange={(e) => setOtherDeductions(e.target.value)}
                       className="w-full px-3.5 py-2 bg-[#FAF8F5] border border-[#ede8e1] rounded-2xl text-sm"
@@ -572,65 +590,95 @@ export function EmployeesViewClient({ employees }: { employees: any[] }) {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Notes</label>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Notes / Remarks
+                    </label>
                     <input
                       type="text"
                       value={settleNotes}
                       onChange={(e) => setSettleNotes(e.target.value)}
-                      placeholder="Remarks..."
+                      placeholder="e.g. Paid via Cash / Bank Transfer..."
                       className="w-full px-3.5 py-2 bg-[#FAF8F5] border border-[#ede8e1] rounded-2xl text-sm"
                     />
                   </div>
 
                   {/* Real-time Settlement Calculation Breakdown */}
-                  {actionModalEmp && (
-                    <div className="bg-[#FAF8F5] border border-[#ede8e1] rounded-2xl p-3.5 space-y-1.5 text-xs">
-                      <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block mb-1">
-                        Settlement Preview
-                      </span>
-                      <div className="flex justify-between text-slate-600">
-                        <span>Base Salary:</span>
-                        <span className="font-semibold tabular-nums">
-                          ৳ {Number(actionModalEmp.monthlySalary || 0).toLocaleString("en-IN")}
-                        </span>
-                      </div>
-                      <div className="flex justify-between text-amber-700">
-                        <span>Advances Deducted:</span>
-                        <span className="font-semibold tabular-nums">
-                          - ৳{" "}
-                          {(
-                            actionModalEmp.advances?.reduce(
-                              (s: number, a: any) => s + Number(a.amount),
-                              0
-                            ) || 0
-                          ).toLocaleString("en-IN")}
-                        </span>
-                      </div>
-                      {Number(otherDeductions) > 0 && (
-                        <div className="flex justify-between text-rose-600">
-                          <span>Other Deductions:</span>
-                          <span className="font-semibold tabular-nums">
-                            - ৳ {Number(otherDeductions).toLocaleString("en-IN")}
+                  {actionModalEmp &&
+                    (() => {
+                      const matchingAdvances =
+                        actionModalEmp.advances?.filter(
+                          (a: any) =>
+                            !a.isSettled &&
+                            (a.monthYear <= settleMonth || a.monthYear === settleMonth)
+                        ) || [];
+                      const matchingBonuses =
+                        actionModalEmp.bonuses?.filter((b: any) => b.monthYear === settleMonth) ||
+                        [];
+
+                      const baseSalaryVal = Number(actionModalEmp.monthlySalary || 0);
+                      const advancesDeductionVal = matchingAdvances.reduce(
+                        (s: number, a: any) => s + Number(a.amount),
+                        0
+                      );
+                      const bonusesAdditionVal = matchingBonuses.reduce(
+                        (s: number, b: any) => s + Number(b.amount),
+                        0
+                      );
+                      const otherDeductionsVal = Number(otherDeductions) || 0;
+                      const netPayableVal = Math.max(
+                        0,
+                        baseSalaryVal +
+                          bonusesAdditionVal -
+                          advancesDeductionVal -
+                          otherDeductionsVal
+                      );
+
+                      return (
+                        <div className="bg-[#FAF8F5] border border-[#ede8e1] rounded-2xl p-3.5 space-y-1.5 text-xs">
+                          <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block mb-1">
+                            Settlement Preview for {settleMonth}
                           </span>
+                          <div className="flex justify-between text-slate-600">
+                            <span>Base Salary:</span>
+                            <span className="font-semibold tabular-nums">
+                              + ৳ {baseSalaryVal.toLocaleString("en-IN")}
+                            </span>
+                          </div>
+
+                          {bonusesAdditionVal > 0 && (
+                            <div className="flex justify-between text-emerald-700">
+                              <span>Bonuses ({matchingBonuses.length}):</span>
+                              <span className="font-semibold tabular-nums">
+                                + ৳ {bonusesAdditionVal.toLocaleString("en-IN")}
+                              </span>
+                            </div>
+                          )}
+
+                          <div className="flex justify-between text-amber-700">
+                            <span>Pending Advances ({matchingAdvances.length}):</span>
+                            <span className="font-semibold tabular-nums">
+                              - ৳ {advancesDeductionVal.toLocaleString("en-IN")}
+                            </span>
+                          </div>
+
+                          {otherDeductionsVal > 0 && (
+                            <div className="flex justify-between text-rose-600">
+                              <span>Other Deductions:</span>
+                              <span className="font-semibold tabular-nums">
+                                - ৳ {otherDeductionsVal.toLocaleString("en-IN")}
+                              </span>
+                            </div>
+                          )}
+
+                          <div className="pt-2 border-t border-[#ede8e1] flex justify-between font-bold text-slate-900 text-sm">
+                            <span>Net Payable:</span>
+                            <span className="text-emerald-800 tabular-nums">
+                              ৳ {netPayableVal.toLocaleString("en-IN")}
+                            </span>
+                          </div>
                         </div>
-                      )}
-                      <div className="pt-2 border-t border-[#ede8e1] flex justify-between font-bold text-slate-900 text-sm">
-                        <span>Net Payable:</span>
-                        <span className="text-emerald-800 tabular-nums">
-                          ৳{" "}
-                          {Math.max(
-                            0,
-                            Number(actionModalEmp.monthlySalary || 0) -
-                              (actionModalEmp.advances?.reduce(
-                                (s: number, a: any) => s + Number(a.amount),
-                                0
-                              ) || 0) -
-                              (Number(otherDeductions) || 0)
-                          ).toLocaleString("en-IN")}
-                        </span>
-                      </div>
-                    </div>
-                  )}
+                      );
+                    })()}
                 </>
               )}
 
@@ -644,7 +692,13 @@ export function EmployeesViewClient({ employees }: { employees: any[] }) {
                 </button>
                 <button
                   type="submit"
-                  disabled={isPending}
+                  disabled={
+                    isPending ||
+                    (actionType === "SETTLE" &&
+                      Boolean(
+                        actionModalEmp?.settlements?.some((s: any) => s.monthYear === settleMonth)
+                      ))
+                  }
                   className="px-5 py-2 bg-[#164e3f] hover:bg-[#124235] text-white rounded-2xl text-sm font-medium transition-colors shadow-sm disabled:opacity-50"
                 >
                   Confirm
@@ -656,110 +710,279 @@ export function EmployeesViewClient({ employees }: { employees: any[] }) {
       )}
 
       {/* Salary Audit Log Modal */}
-      {auditLogEmployee && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-[#ede8e1] max-w-2xl w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between pb-2 border-b border-[#ede8e1]">
-              <h2 className="text-lg font-bold text-slate-900">
-                Salary Audit Log — {auditLogEmployee.name}
-              </h2>
-              <button
-                onClick={() => setAuditLogEmployee(null)}
-                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+      {auditLogEmployee &&
+        (() => {
+          const advancesList = auditLogEmployee.advances || [];
+          const bonusesList = auditLogEmployee.bonuses || [];
+          const settlementsList = auditLogEmployee.settlements || [];
 
-            {/* Summary Row */}
-            <div className="bg-[#FAF8F5] border border-[#ede8e1] rounded-2xl p-4 grid grid-cols-3 text-center text-xs">
-              <div>
-                <span className="text-[10px] uppercase font-semibold text-slate-400 block">
-                  Advances
-                </span>
-                <span className="text-base font-bold text-slate-900">
-                  ৳{" "}
-                  {(
-                    auditLogEmployee.advances?.reduce(
-                      (s: number, a: any) => s + Number(a.amount),
-                      0
-                    ) || 0
-                  ).toLocaleString("en-IN")}
-                </span>
-              </div>
-              <div>
-                <span className="text-[10px] uppercase font-semibold text-slate-400 block">
-                  Settlements
-                </span>
-                <span className="text-base font-bold text-slate-900">
-                  {auditLogEmployee.settlements?.length || 0}
-                </span>
-              </div>
-              <div>
-                <span className="text-[10px] uppercase font-semibold text-slate-400 block">
-                  Monthly Base
-                </span>
-                <span className="text-base font-bold text-slate-900">
-                  ৳ {Number(auditLogEmployee.monthlySalary).toLocaleString("en-IN")}
-                </span>
-              </div>
-            </div>
+          const totalAdvancesAllTime = advancesList.reduce(
+            (s: number, a: any) => s + Number(a.amount),
+            0
+          );
+          const pendingAdvancesSum = advancesList
+            .filter((a: any) => !a.isSettled)
+            .reduce((s: number, a: any) => s + Number(a.amount), 0);
+          const settledAdvancesSum = advancesList
+            .filter((a: any) => a.isSettled)
+            .reduce((s: number, a: any) => s + Number(a.amount), 0);
+          const totalBonusesSum = bonusesList.reduce(
+            (s: number, b: any) => s + Number(b.amount),
+            0
+          );
+          const totalSettledPaidSum = settlementsList.reduce(
+            (s: number, p: any) => s + Number(p.netPaidAmount),
+            0
+          );
 
-            {/* Audit Log Table */}
-            <div className="overflow-x-auto border border-[#ede8e1] rounded-2xl">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="border-b border-[#ede8e1] bg-[#FAF8F5] text-slate-400 uppercase font-semibold text-[10px]">
-                    <th className="py-2.5 px-4">Date</th>
-                    <th className="py-2.5 px-4">Type</th>
-                    <th className="py-2.5 px-4">Reason / Notes</th>
-                    <th className="py-2.5 px-4 text-right">Amount</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#ede8e1]/60">
-                  {(!auditLogEmployee.advances || auditLogEmployee.advances.length === 0) &&
-                  (!auditLogEmployee.settlements || auditLogEmployee.settlements.length === 0) ? (
-                    <tr>
-                      <td colSpan={4} className="py-6 text-center text-slate-400">
-                        No transactions logged for this employee.
-                      </td>
-                    </tr>
-                  ) : (
-                    <>
-                      {auditLogEmployee.advances?.map((a: any) => (
-                        <tr key={a.id} className="hover:bg-[#FAF8F5]">
-                          <td className="py-2.5 px-4 font-mono">
-                            {formatDate(a.date, "yyyy-MM-dd")}
-                          </td>
-                          <td className="py-2.5 px-4 font-medium text-amber-700">Advance</td>
-                          <td className="py-2.5 px-4 text-slate-600">{a.reason || "General"}</td>
-                          <td className="py-2.5 px-4 text-right font-bold text-slate-900">
-                            ৳ {Number(a.amount).toLocaleString("en-IN")}
+          const allTransactions = [
+            ...advancesList.map((a: any) => ({
+              id: `adv-${a.id}`,
+              date: a.date,
+              type: "ADVANCE" as const,
+              title: a.reason || "Salary Advance",
+              monthYear: a.monthYear,
+              amount: Number(a.amount),
+              isSettled: Boolean(a.isSettled),
+              details: a.isSettled
+                ? "Settled in month-end payroll"
+                : "Pending deduction in next settlement",
+            })),
+            ...bonusesList.map((b: any) => ({
+              id: `bon-${b.id}`,
+              date: b.date,
+              type: "BONUS" as const,
+              title: b.reason || "Bonus",
+              monthYear: b.monthYear,
+              amount: Number(b.amount),
+              isSettled: true,
+              details: `Festival / Performance Bonus (${b.monthYear})`,
+            })),
+            ...settlementsList.map((s: any) => ({
+              id: `set-${s.id}`,
+              date: s.paymentDate,
+              type: "SETTLEMENT" as const,
+              title: `Salary Settlement (${s.monthYear})`,
+              monthYear: s.monthYear,
+              amount: Number(s.netPaidAmount),
+              isSettled: true,
+              details: `Base: ৳${Number(s.baseSalary).toLocaleString("en-IN")}${Number(s.totalBonus) > 0 ? ` + Bonus: ৳${Number(s.totalBonus).toLocaleString("en-IN")}` : ""}${Number(s.totalAdvanceDeducted) > 0 ? ` - Adv: ৳${Number(s.totalAdvanceDeducted).toLocaleString("en-IN")}` : ""}${Number(s.otherDeductions) > 0 ? ` - Ded: ৳${Number(s.otherDeductions).toLocaleString("en-IN")}` : ""} (${s.paymentMethod || "CASH"}${s.notes ? ` · ${s.notes}` : ""})`,
+            })),
+          ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+          const filteredTransactions = allTransactions.filter((item) => {
+            if (auditLogTab === "SETTLEMENTS") return item.type === "SETTLEMENT";
+            if (auditLogTab === "ADVANCES") return item.type === "ADVANCE";
+            if (auditLogTab === "BONUSES") return item.type === "BONUS";
+            return true;
+          });
+
+          return (
+            <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+              <div className="bg-white rounded-2xl border border-[#ede8e1] max-w-3xl w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+                <div className="flex items-center justify-between pb-2 border-b border-[#ede8e1]">
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-900">
+                      Salary & Payroll History — {auditLogEmployee.name}
+                    </h2>
+                    <p className="text-xs text-slate-500">
+                      {auditLogEmployee.designation} · Base Salary: ৳{" "}
+                      {Number(auditLogEmployee.monthlySalary).toLocaleString("en-IN")}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setAuditLogEmployee(null)}
+                    className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {/* Summary Row */}
+                <div className="bg-[#FAF8F5] border border-[#ede8e1] rounded-2xl p-4 grid grid-cols-2 sm:grid-cols-4 gap-3 text-center text-xs">
+                  <div className="bg-white p-3 rounded-xl border border-[#ede8e1]/60">
+                    <span className="text-[10px] uppercase font-semibold text-slate-400 block">
+                      Base Salary
+                    </span>
+                    <span className="text-sm font-bold text-slate-900">
+                      ৳ {Number(auditLogEmployee.monthlySalary).toLocaleString("en-IN")}
+                    </span>
+                  </div>
+
+                  <div className="bg-white p-3 rounded-xl border border-[#ede8e1]/60">
+                    <span className="text-[10px] uppercase font-semibold text-amber-700 block">
+                      Advances Logged
+                    </span>
+                    <span className="text-sm font-bold text-amber-800">
+                      ৳ {totalAdvancesAllTime.toLocaleString("en-IN")}
+                    </span>
+                    <span className="text-[10px] text-slate-400 block mt-0.5">
+                      {pendingAdvancesSum > 0
+                        ? `(৳${pendingAdvancesSum.toLocaleString("en-IN")} pending)`
+                        : "(All settled)"}
+                    </span>
+                  </div>
+
+                  <div className="bg-white p-3 rounded-xl border border-[#ede8e1]/60">
+                    <span className="text-[10px] uppercase font-semibold text-emerald-700 block">
+                      Total Bonuses
+                    </span>
+                    <span className="text-sm font-bold text-emerald-800">
+                      ৳ {totalBonusesSum.toLocaleString("en-IN")}
+                    </span>
+                    <span className="text-[10px] text-slate-400 block mt-0.5">
+                      {bonusesList.length} bonus record(s)
+                    </span>
+                  </div>
+
+                  <div className="bg-white p-3 rounded-xl border border-[#ede8e1]/60">
+                    <span className="text-[10px] uppercase font-semibold text-slate-700 block">
+                      Settlements
+                    </span>
+                    <span className="text-sm font-bold text-slate-900">
+                      ৳ {totalSettledPaidSum.toLocaleString("en-IN")}
+                    </span>
+                    <span className="text-[10px] text-slate-400 block mt-0.5">
+                      {settlementsList.length} month(s) paid
+                    </span>
+                  </div>
+                </div>
+
+                {/* Tabs Bar */}
+                <div className="flex items-center gap-1.5 p-1 bg-[#FAF8F5] border border-[#ede8e1] rounded-xl text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setAuditLogTab("ALL")}
+                    className={`px-3 py-1.5 rounded-lg font-medium transition-all ${
+                      auditLogTab === "ALL"
+                        ? "bg-white text-slate-900 shadow-2xs font-bold"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    All Transactions ({allTransactions.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAuditLogTab("SETTLEMENTS")}
+                    className={`px-3 py-1.5 rounded-lg font-medium transition-all ${
+                      auditLogTab === "SETTLEMENTS"
+                        ? "bg-white text-slate-900 shadow-2xs font-bold"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    Settlements ({settlementsList.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAuditLogTab("ADVANCES")}
+                    className={`px-3 py-1.5 rounded-lg font-medium transition-all ${
+                      auditLogTab === "ADVANCES"
+                        ? "bg-white text-slate-900 shadow-2xs font-bold"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    Advances ({advancesList.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAuditLogTab("BONUSES")}
+                    className={`px-3 py-1.5 rounded-lg font-medium transition-all ${
+                      auditLogTab === "BONUSES"
+                        ? "bg-white text-slate-900 shadow-2xs font-bold"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    Bonuses ({bonusesList.length})
+                  </button>
+                </div>
+
+                {/* Audit Log Table */}
+                <div className="overflow-x-auto border border-[#ede8e1] rounded-2xl">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="border-b border-[#ede8e1] bg-[#FAF8F5] text-slate-400 uppercase font-semibold text-[10px]">
+                        <th className="py-2.5 px-4">Date</th>
+                        <th className="py-2.5 px-4">Type</th>
+                        <th className="py-2.5 px-4">Description / Breakdown</th>
+                        <th className="py-2.5 px-4 text-right">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#ede8e1]/60">
+                      {filteredTransactions.length === 0 ? (
+                        <tr>
+                          <td colSpan={4} className="py-8 text-center text-slate-400">
+                            No transactions found in this category.
                           </td>
                         </tr>
-                      ))}
-                      {auditLogEmployee.settlements?.map((p: any) => (
-                        <tr key={p.id} className="hover:bg-[#FAF8F5]">
-                          <td className="py-2.5 px-4 font-mono">
-                            {formatDate(p.paymentDate, "yyyy-MM-dd")}
-                          </td>
-                          <td className="py-2.5 px-4 font-medium text-emerald-700">
-                            Salary Settlement ({p.monthYear})
-                          </td>
-                          <td className="py-2.5 px-4 text-slate-600">{p.notes || "Cash/Bank"}</td>
-                          <td className="py-2.5 px-4 text-right font-bold text-emerald-700">
-                            ৳ {Number(p.netPaidAmount).toLocaleString("en-IN")}
-                          </td>
-                        </tr>
-                      ))}
-                    </>
-                  )}
-                </tbody>
-              </table>
+                      ) : (
+                        filteredTransactions.map((item) => (
+                          <tr key={item.id} className="hover:bg-[#FAF8F5]/80 transition-colors">
+                            <td className="py-3 px-4 font-mono text-slate-600 whitespace-nowrap">
+                              {formatDate(item.date, "yyyy-MM-dd")}
+                            </td>
+                            <td className="py-3 px-4 whitespace-nowrap">
+                              {item.type === "ADVANCE" && (
+                                <div className="flex items-center gap-1.5">
+                                  <span className="px-2 py-0.5 bg-amber-50 text-amber-800 border border-amber-200 rounded-md font-semibold text-[11px]">
+                                    Advance
+                                  </span>
+                                  {item.isSettled ? (
+                                    <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded text-[10px] font-medium">
+                                      Settled
+                                    </span>
+                                  ) : (
+                                    <span className="px-1.5 py-0.5 bg-amber-100 text-amber-900 rounded text-[10px] font-medium">
+                                      Pending
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+
+                              {item.type === "BONUS" && (
+                                <span className="px-2 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-md font-semibold text-[11px]">
+                                  Bonus
+                                </span>
+                              )}
+
+                              {item.type === "SETTLEMENT" && (
+                                <span className="px-2 py-0.5 bg-slate-100 text-slate-800 border border-slate-300 rounded-md font-semibold text-[11px]">
+                                  Settlement
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3 px-4">
+                              <div className="font-medium text-slate-900">{item.title}</div>
+                              <div className="text-[11px] text-slate-500 mt-0.5">
+                                {item.details}
+                              </div>
+                            </td>
+                            <td className="py-3 px-4 text-right whitespace-nowrap">
+                              {item.type === "ADVANCE" && (
+                                <span className="font-bold text-amber-700 tabular-nums">
+                                  - ৳ {item.amount.toLocaleString("en-IN")}
+                                </span>
+                              )}
+                              {item.type === "BONUS" && (
+                                <span className="font-bold text-emerald-700 tabular-nums">
+                                  + ৳ {item.amount.toLocaleString("en-IN")}
+                                </span>
+                              )}
+                              {item.type === "SETTLEMENT" && (
+                                <span className="font-bold text-slate-900 tabular-nums">
+                                  ৳ {item.amount.toLocaleString("en-IN")}
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          );
+        })()}
 
       {/* New / Edit Employee Modal */}
       {(showNewEmpModal || editingEmp) && (

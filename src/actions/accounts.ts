@@ -4,13 +4,10 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
 import { logAuditEvent } from "@/lib/audit";
-import {
-  RecordPaymentSchema,
-  CreateExpenseSchema,
-  CreateExpenseCategorySchema,
-} from "@/schemas";
+import { RecordPaymentSchema, CreateExpenseSchema, CreateExpenseCategorySchema } from "@/schemas";
 import { LedgerEntryType, PaymentMethod } from "@prisma/client";
 import { revalidatePath } from "next/cache";
+import { calculateNextRunningBalance } from "@/services/ledger.service";
 
 /**
  * Generates sequential Payment Number in format PAY-YYYY-0001
@@ -276,7 +273,9 @@ export async function recordPayment(input: unknown) {
     });
 
     const prevBalance = lastEntry ? Number(lastEntry.runningBalance) : 0;
-    const newRunningBalance = prevBalance - validated.amount;
+    const newRunningBalance = calculateNextRunningBalance(prevBalance, {
+      creditAmount: validated.amount,
+    });
 
     // 3. Record payment credit entry in buyer ledger
     await tx.buyerLedgerEntry.create({

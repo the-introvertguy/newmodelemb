@@ -12,6 +12,8 @@ import {
 } from "@/schemas";
 import { OrderStatus, LedgerEntryType } from "@prisma/client";
 import { revalidatePath } from "next/cache";
+import { calculateOrderSummary } from "@/services/orders.service";
+import { calculateNextRunningBalance } from "@/services/ledger.service";
 
 /**
  * Generates the next sequential Order Number in format YYYYMM0001 (e.g. 2026080001)
@@ -198,36 +200,33 @@ export async function createOrder(input: unknown) {
   }
 
   const validated = CreateOrderSchema.parse(input);
-  
+
   let orderNumber = validated.orderNumber?.trim();
   if (orderNumber) {
     const existing = await prisma.order.findUnique({
       where: { orderNumber },
     });
     if (existing && !existing.deletedAt) {
-      throw new Error(`Order number "${orderNumber}" already exists. Please choose a unique order number.`);
+      throw new Error(
+        `Order number "${orderNumber}" already exists. Please choose a unique order number.`
+      );
     }
   } else {
     orderNumber = await generateNextOrderNumber(validated.orderDate);
   }
 
-  // Compute item totals and order grand total
-  const itemsWithTotals = validated.items.map((item) => {
-    const qty = Number(item.quantity);
-    const price = Number(item.unitPrice);
-    const totalPrice = qty * price;
-    return {
-      productType: item.productType.trim(),
-      styleRef: item.styleRef?.trim() || "—",
-      designReference: item.designReference.trim(),
-      quantity: qty,
-      unitPrice: price,
-      totalPrice,
-      notes: item.notes?.trim() || null,
-    };
-  });
-
-  const grandTotal = itemsWithTotals.reduce((acc, curr) => acc + curr.totalPrice, 0);
+  // Compute item totals and order grand total using Order Domain Service
+  const orderSummary = calculateOrderSummary(validated.items);
+  const grandTotal = orderSummary.totalAmount;
+  const itemsWithTotals = orderSummary.items.map((item) => ({
+    productType: item.productType.trim(),
+    styleRef: item.styleRef?.trim() || "—",
+    designReference: item.designReference ? item.designReference.trim() : "",
+    quantity: item.quantity,
+    unitPrice: item.unitPrice,
+    totalPrice: item.totalPrice,
+    notes: (item as any).notes?.trim() || null,
+  }));
 
   // Atomic database transaction ensuring order, items, and ledger entry are created consistently
   const result = await prisma.$transaction(async (tx) => {
@@ -260,7 +259,9 @@ export async function createOrder(input: unknown) {
     });
 
     const previousBalance = lastEntry ? Number(lastEntry.runningBalance) : 0;
-    const newRunningBalance = previousBalance + grandTotal;
+    const newRunningBalance = calculateNextRunningBalance(previousBalance, {
+      debitAmount: grandTotal,
+    });
 
     // 3. Record order receivable in Buyer Ledger
     await tx.buyerLedgerEntry.create({
@@ -500,9 +501,7 @@ export async function updateOrder(input: unknown) {
               : existingOrder.challanNumber,
           status: (validated.status as OrderStatus) || existingOrder.status,
           notes:
-            validated.notes !== undefined
-              ? validated.notes?.trim() || null
-              : existingOrder.notes,
+            validated.notes !== undefined ? validated.notes?.trim() || null : existingOrder.notes,
           totalAmount: grandTotal,
           items: {
             create: itemsWithTotals,
@@ -570,9 +569,7 @@ export async function updateOrder(input: unknown) {
             : existingOrder.challanNumber,
         status: (validated.status as OrderStatus) || existingOrder.status,
         notes:
-          validated.notes !== undefined
-            ? validated.notes?.trim() || null
-            : existingOrder.notes,
+          validated.notes !== undefined ? validated.notes?.trim() || null : existingOrder.notes,
       },
       include: {
         items: true,

@@ -13,11 +13,7 @@ interface ExtraCost {
   amount: number;
 }
 
-export function NewInvoiceBuilder({
-  buyers,
-}: {
-  buyers: { id: string; companyName: string }[];
-}) {
+export function NewInvoiceBuilder({ buyers }: { buyers: { id: string; companyName: string }[] }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
@@ -236,7 +232,9 @@ export function NewInvoiceBuilder({
                   }}
                   className="text-xs font-semibold text-[#164e3f] hover:underline"
                 >
-                  {selectedOrderIds.length === availableOrders.length ? "Deselect All" : "Select All"}
+                  {selectedOrderIds.length === availableOrders.length
+                    ? "Deselect All"
+                    : "Select All"}
                 </button>
               )}
             </div>
@@ -316,7 +314,10 @@ export function NewInvoiceBuilder({
             </div>
 
             {extraCosts.map((cost, idx) => (
-              <div key={idx} className="flex items-center gap-3 bg-[#FAF8F5] p-2.5 rounded-2xl border border-[#ede8e1]">
+              <div
+                key={idx}
+                className="flex items-center gap-3 bg-[#FAF8F5] p-2.5 rounded-2xl border border-[#ede8e1]"
+              >
                 <input
                   type="text"
                   value={cost.name}
@@ -356,16 +357,16 @@ export function NewInvoiceBuilder({
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
               <span className="opacity-80">Orders Included</span>
-              <span className="font-semibold">{selectedOrders.length}</span>
+              <span className="font-semibold tabular-nums">{selectedOrders.length}</span>
             </div>
             <div className="flex justify-between">
               <span className="opacity-80">Orders Subtotal</span>
-              <span className="font-bold">{formatCurrency(subtotal)}</span>
+              <span className="font-bold tabular-nums">{formatCurrency(subtotal)}</span>
             </div>
             {extraCostsTotal > 0 && (
               <div className="flex justify-between text-emerald-200">
                 <span>Extra Charges / VAT</span>
-                <span className="font-bold">+ {formatCurrency(extraCostsTotal)}</span>
+                <span className="font-bold tabular-nums">+ {formatCurrency(extraCostsTotal)}</span>
               </div>
             )}
           </div>
@@ -378,7 +379,7 @@ export function NewInvoiceBuilder({
                 min="0"
                 value={discount}
                 onChange={(e) => setDiscount(e.target.value)}
-                className="w-full px-3.5 py-2 bg-black/20 border border-white/20 rounded-2xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-white"
+                className="w-full px-3.5 py-2 bg-black/20 border border-white/20 rounded-2xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-white tabular-nums"
               />
             </div>
 
@@ -389,14 +390,17 @@ export function NewInvoiceBuilder({
                 min="0"
                 value={advanceReceived}
                 onChange={(e) => setAdvanceReceived(e.target.value)}
-                className="w-full px-3.5 py-2 bg-black/20 border border-white/20 rounded-2xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-white"
+                className="w-full px-3.5 py-2 bg-black/20 border border-white/20 rounded-2xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-white tabular-nums"
               />
             </div>
 
             {/* Rounded Ceiling Toggle */}
             <div className="pt-2 flex items-center justify-between">
-              <label htmlFor="ceilingToggle" className="text-xs opacity-90 cursor-pointer select-none font-medium">
-                Round
+              <label
+                htmlFor="ceilingToggle"
+                className="text-xs opacity-90 cursor-pointer select-none font-medium"
+              >
+                Round up to nearest integer
               </label>
               <input
                 id="ceilingToggle"
@@ -412,7 +416,9 @@ export function NewInvoiceBuilder({
             <span className="text-[11px] font-semibold tracking-wider uppercase opacity-75 block">
               Grand Total
             </span>
-            <p className="text-4xl font-bold">৳ {grandTotal.toLocaleString("en-IN")}</p>
+            <p className="text-4xl font-bold tabular-nums tracking-tight">
+              ৳ {grandTotal.toLocaleString("en-IN")}
+            </p>
           </div>
         </div>
       </div>

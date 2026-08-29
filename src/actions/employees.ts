@@ -12,6 +12,7 @@ import {
 } from "@/schemas";
 import { PaymentMethod } from "@prisma/client";
 import { revalidatePath } from "next/cache";
+import { calculatePayrollSettlement } from "@/services/payroll.service";
 
 export interface GetEmployeesParams {
   page?: number;
@@ -55,7 +56,18 @@ export async function getEmployees({
       orderBy: { name: "asc" },
       include: {
         advances: {
-          where: { isSettled: false },
+          orderBy: { date: "desc" },
+          select: {
+            id: true,
+            amount: true,
+            monthYear: true,
+            reason: true,
+            date: true,
+            isSettled: true,
+          },
+        },
+        bonuses: {
+          orderBy: { date: "desc" },
           select: {
             id: true,
             amount: true,
@@ -64,13 +76,20 @@ export async function getEmployees({
             date: true,
           },
         },
-        bonuses: {
-          orderBy: { date: "desc" },
-          take: 5,
-        },
         settlements: {
           orderBy: { paymentDate: "desc" },
-          take: 3,
+          select: {
+            id: true,
+            monthYear: true,
+            baseSalary: true,
+            totalBonus: true,
+            totalAdvanceDeducted: true,
+            otherDeductions: true,
+            netPaidAmount: true,
+            paymentDate: true,
+            paymentMethod: true,
+            notes: true,
+          },
         },
       },
     }),
@@ -331,7 +350,7 @@ export async function settleMonthlySalary(input: unknown) {
     include: {
       advances: {
         where: {
-          monthYear: validated.monthYear,
+          monthYear: { lte: validated.monthYear },
           isSettled: false,
         },
       },
@@ -358,15 +377,18 @@ export async function settleMonthlySalary(input: unknown) {
   });
 
   if (existingSettlement) {
-    throw new Error(`Salary for ${employee.name} for month ${validated.monthYear} has already been settled.`);
+    throw new Error(
+      `Salary for ${employee.name} for month ${validated.monthYear} has already been settled.`
+    );
   }
 
-  const baseSalary = Number(employee.monthlySalary);
-  const totalAdvances = employee.advances.reduce((acc, curr) => acc + Number(curr.amount), 0);
-  const totalBonuses = employee.bonuses.reduce((acc, curr) => acc + Number(curr.amount), 0);
-  const otherDeductions = Number(validated.otherDeductions || 0);
-
-  const netPaidAmount = Math.max(0, baseSalary + totalBonuses - totalAdvances - otherDeductions);
+  const { baseSalary, totalBonuses, totalAdvances, otherDeductions, netPaidAmount } =
+    calculatePayrollSettlement({
+      monthlySalary: employee.monthlySalary,
+      bonuses: employee.bonuses,
+      advances: employee.advances,
+      otherDeductions: validated.otherDeductions,
+    });
 
   const settlement = await prisma.$transaction(async (tx) => {
     // 1. Create settlement record
@@ -385,11 +407,11 @@ export async function settleMonthlySalary(input: unknown) {
       },
     });
 
-    // 2. Mark all advances for this month as settled
+    // 2. Mark all advances for or up to this month as settled
     await tx.salaryAdvance.updateMany({
       where: {
         employeeId: validated.employeeId,
-        monthYear: validated.monthYear,
+        monthYear: { lte: validated.monthYear },
         isSettled: false,
       },
       data: {
@@ -417,5 +439,8 @@ export async function settleMonthlySalary(input: unknown) {
 
   revalidatePath("/employees");
   revalidatePath(`/employees/${validated.employeeId}`);
+  revalidatePath("/reports");
+  revalidatePath("/accounts");
+  revalidatePath("/");
   return { success: true, settlement };
 }
